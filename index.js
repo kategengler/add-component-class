@@ -19,20 +19,32 @@ function indentBlock(text, spaces) {
 }
 
 function transformSource(source, filePath) {
-  if (/\bexport\s+default\b/.test(source)) {
-    throw new Error('File already has a default export');
-  }
-
   const templateRegex = /<template\b[^>]*>[\s\S]*?<\/template>/gm;
-  const templateMatches = source.match(templateRegex);
+  const templateMatches = [...source.matchAll(templateRegex)];
 
-  if (!templateMatches) {
+  if (templateMatches.length === 0) {
     throw new Error('No <template> tag found');
   }
   if (templateMatches.length > 1) {
     throw new Error('Expected exactly one <template> tag');
   }
-  const templateMatch = templateMatches[0];
+  const templateMatch = templateMatches[0][0];
+
+  const templateOnlyDeclarationRegex =
+    /const\s+([A-Za-z_$][\w$]*)\s*(?::[\s\S]*?)?=\s*(<template\b[^>]*>[\s\S]*?<\/template>)\s*(?:satisfies\s+[\s\S]*?)?;?/gm;
+  const templateDeclarationMatch = [...source.matchAll(templateOnlyDeclarationRegex)].find(
+    (match) => match[2] === templateMatch
+  );
+  const templateDeclarationName = templateDeclarationMatch ? templateDeclarationMatch[1] : null;
+
+  if (/\bexport\s+default\b/.test(source)) {
+    const allowedDefaultExport = templateDeclarationName
+      ? new RegExp(`\\bexport\\s+default\\s+${templateDeclarationName}\\b`).test(source)
+      : false;
+    if (!allowedDefaultExport) {
+      throw new Error('File already has a default export');
+    }
+  }
 
   const componentImportRegex = /import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]@glimmer\/component['"];?/;
   const componentImportMatch = source.match(componentImportRegex);
@@ -45,9 +57,13 @@ function transformSource(source, filePath) {
 
   const className = toClassName(filePath) || 'ComponentClass';
   const indentedTemplate = indentBlock(templateMatch, 2);
-  const classBlock = `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
+  const classBlock = templateDeclarationName
+    ? `class ${templateDeclarationName} extends ${componentIdentifier} {\n${indentedTemplate}\n}`
+    : `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
 
-  return nextSource.replace(templateMatch, classBlock);
+  return templateDeclarationMatch
+    ? nextSource.replace(templateDeclarationMatch[0], classBlock)
+    : nextSource.replace(templateMatch, classBlock);
 }
 
 function transformFile(filePath) {
