@@ -2,22 +2,25 @@
   "name": "add-component-class",
   "version": "1.0.0",
   "description": "Upgrades a template-only gjs/gts to have a component class",
-  "main": "index.js",
-  "scripts": {
-    "test": "node --test"
-  },
-  "bin": {
-    "add-component-class": "./bin/add-component-class.js"
+  "keywords": [],
+  "homepage": "https://github.com/kategengler/add-component-class#readme",
+  "bugs": {
+    "url": "https://github.com/kategengler/add-component-class/issues"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kategengler/add-component-class.git"
   },
-  "keywords": [],
-  "author": "",
   "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/kategengler/add-component-class/issues"
+  "author": "",
+  "main": "index.js",
+  "bin": {
+    "add-component-class": "./bin/add-component-class.js"
   },
-  "homepage": "https://github.com/kategengler/add-component-class#readme"
+  "scripts": {
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "release-plan": "^0.18.0"
+  }
 }
