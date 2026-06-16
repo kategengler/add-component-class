@@ -31,7 +31,7 @@ function transformSource(source, filePath) {
   const templateMatch = templateMatches[0][0];
 
   const templateOnlyDeclarationRegex =
-    /const\s+([A-Za-z_$][\w$]*)\s*(?::[\s\S]*?)?=\s*(<template\b[^>]*>[\s\S]*?<\/template>)\s*(?:satisfies\s+[\s\S]*?)?;?/gm;
+    /const\s+([A-Za-z_$][\w$]*)\s*(?::[\s\S]*?)?=\s*(<template\b[^>]*>[\s\S]*?<\/template>)\s*(?:satisfies\s+[\s\S]*?(?=\s*;|\n\s*(?:export|const|let|var|class|function|$)))?\s*;?/gm;
   const templateDeclarationMatch = [...source.matchAll(templateOnlyDeclarationRegex)].find(
     (match) => match[2] === templateMatch
   );
