@@ -62,3 +62,16 @@ test('errors when no template tag exists', (t) => {
     /No <template> tag found/
   );
 });
+
+test('errors when multiple template tags exist', (t) => {
+  const filePath = writeTempFile(
+    t,
+    'multi-template.gjs',
+    `<template>one</template>\n<template>two</template>\n`
+  );
+
+  assert.throws(
+    () => execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' }),
+    /Expected exactly one <template> tag/
+  );
+});

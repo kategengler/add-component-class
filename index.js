@@ -14,7 +14,7 @@ function indentBlock(text, spaces) {
   const prefix = ' '.repeat(spaces);
   return text
     .split('\n')
-    .map((line) => `${prefix}${line}`)
+    .map((line) => (line ? `${prefix}${line}` : line))
     .join('\n');
 }
 
@@ -23,12 +23,16 @@ function transformSource(source, filePath) {
     throw new Error('File already has a default export');
   }
 
-  const templateRegex = /<template\b[^>]*>[\s\S]*?<\/template>/m;
-  const templateMatch = source.match(templateRegex);
+  const templateRegex = /<template\b[^>]*>[\s\S]*?<\/template>/gm;
+  const templateMatches = source.match(templateRegex);
 
-  if (!templateMatch) {
+  if (!templateMatches) {
     throw new Error('No <template> tag found');
   }
+  if (templateMatches.length > 1) {
+    throw new Error('Expected exactly one <template> tag');
+  }
+  const templateMatch = templateMatches[0];
 
   const componentImportRegex = /import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]@glimmer\/component['"];?/;
   const componentImportMatch = source.match(componentImportRegex);
@@ -40,10 +44,10 @@ function transformSource(source, filePath) {
   }
 
   const className = toClassName(filePath) || 'ComponentClass';
-  const indentedTemplate = indentBlock(templateMatch[0], 2);
+  const indentedTemplate = indentBlock(templateMatch, 2);
   const classBlock = `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
 
-  return nextSource.replace(templateRegex, classBlock);
+  return nextSource.replace(templateMatch, classBlock);
 }
 
 function transformFile(filePath) {
