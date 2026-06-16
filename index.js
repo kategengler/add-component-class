@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const declarationBoundaryKeywords = 'export|const|let|var|class|function|type|interface|enum';
 
 function toClassName(filePath) {
   const baseName = path.basename(filePath, path.extname(filePath));
@@ -18,36 +19,154 @@ function indentBlock(text, spaces) {
     .join('\n');
 }
 
-function transformSource(source, filePath) {
-  if (/\bexport\s+default\b/.test(source)) {
-    throw new Error('File already has a default export');
+function removeUnusedTemplateOnlyTypeImport(source, moduleName, importedType) {
+  const importRegex = new RegExp(
+    `import\\s+type\\s*{\\s*([^}]*)\\s*}\\s*from\\s*['"]${moduleName.replace('/', '\\/')}['"];?\\n?`,
+    'g'
+  );
+  const sourceWithoutModuleImports = source.replace(importRegex, '');
+  if (new RegExp(`\\b${importedType}\\b`).test(sourceWithoutModuleImports)) {
+    return source;
   }
 
-  const templateRegex = /<template\b[^>]*>[\s\S]*?<\/template>/gm;
-  const templateMatches = source.match(templateRegex);
+  return source.replace(importRegex, (fullMatch, specifiers) => {
+    const remaining = specifiers
+      .split(',')
+      .map((specifier) => specifier.trim())
+      .filter((specifier) => specifier && !new RegExp(`^${importedType}(\\s+as\\s+\\w+)?$`).test(specifier));
 
-  if (!templateMatches) {
+    if (remaining.length === 0) {
+      return '';
+    }
+
+    const hasTrailingNewline = fullMatch.endsWith('\n');
+    return `import type { ${remaining.join(', ')} } from '${moduleName}';${hasTrailingNewline ? '\n' : ''}`;
+  });
+}
+
+function findTemplateOnlyDeclaration(source, templateMatchInfo) {
+  const templateMatch = templateMatchInfo[0];
+  const templateStart = templateMatchInfo.index;
+  const templateEnd = templateStart + templateMatch.length;
+
+  const constOnNewLineStart = source.lastIndexOf('\nconst ', templateStart);
+  let constStart = constOnNewLineStart === -1 ? -1 : constOnNewLineStart + 1;
+  if (constStart === -1 && source.startsWith('const ')) {
+    constStart = 0;
+  }
+  if (constStart === -1) {
+    return null;
+  }
+
+  const beforeTemplate = source.slice(constStart, templateStart);
+  if (!beforeTemplate.includes('=')) {
+    return null;
+  }
+
+  const equalsIndex = beforeTemplate.lastIndexOf('=');
+  if (!/^\s*$/.test(beforeTemplate.slice(equalsIndex + 1))) {
+    return null;
+  }
+
+  const headerBeforeTemplate = beforeTemplate.slice(0, equalsIndex + 1);
+  const nameMatch = /^const\s+([A-Za-z_$][\w$]*)\b/.exec(headerBeforeTemplate);
+  if (!nameMatch) {
+    return null;
+  }
+
+  let declarationEnd = templateEnd;
+  while (/\s/.test(source[declarationEnd] || '')) {
+    declarationEnd += 1;
+  }
+
+  if (source.startsWith('satisfies', declarationEnd)) {
+    declarationEnd += 'satisfies'.length;
+
+    while (declarationEnd < source.length) {
+      if (source[declarationEnd] === ';') {
+        declarationEnd += 1;
+        break;
+      }
+
+      if (source[declarationEnd] === '\n') {
+        let lookahead = declarationEnd + 1;
+        while (lookahead < source.length && (source[lookahead] === ' ' || source[lookahead] === '\t')) {
+          lookahead += 1;
+        }
+        if (new RegExp(`^(${declarationBoundaryKeywords})\\b`).test(source.slice(lookahead))) {
+          break;
+        }
+      }
+
+      declarationEnd += 1;
+    }
+  } else if (source[declarationEnd] === ';') {
+    declarationEnd += 1;
+  }
+
+  return {
+    name: nameMatch[1],
+    start: constStart,
+    end: declarationEnd,
+    text: source.slice(constStart, declarationEnd),
+  };
+}
+
+function transformSource(source, filePath) {
+  const templateRegex = /<template\b[^>]*>[\s\S]*?<\/template>/gm;
+  const templateMatches = [...source.matchAll(templateRegex)];
+
+  if (templateMatches.length === 0) {
     throw new Error('No <template> tag found');
   }
   if (templateMatches.length > 1) {
     throw new Error('Expected exactly one <template> tag');
   }
-  const templateMatch = templateMatches[0];
+  const templateMatchInfo = templateMatches[0];
+  const templateMatch = templateMatchInfo[0];
+  const templateDeclaration = findTemplateOnlyDeclaration(source, templateMatchInfo);
+  const templateDeclarationName = templateDeclaration ? templateDeclaration.name : null;
+
+  if (/\bexport\s+default\b/.test(source)) {
+    const allowedDefaultExport = templateDeclarationName
+      ? new RegExp(`\\bexport\\s+default\\s+${templateDeclarationName}\\b`).test(source)
+      : false;
+    if (!allowedDefaultExport) {
+      throw new Error('File already has a default export');
+    }
+  }
 
   const componentImportRegex = /import\s+([A-Za-z_$][\w$]*)\s+from\s+['"]@glimmer\/component['"];?/;
   const componentImportMatch = source.match(componentImportRegex);
   const componentIdentifier = componentImportMatch ? componentImportMatch[1] : 'Component';
 
-  let nextSource = source;
-  if (!componentImportMatch) {
-    nextSource = `import Component from '@glimmer/component';\n${nextSource}`;
-  }
-
   const className = toClassName(filePath) || 'ComponentClass';
   const indentedTemplate = indentBlock(templateMatch, 2);
-  const classBlock = `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
+  const classBlock = templateDeclarationName
+    ? `class ${templateDeclarationName} extends ${componentIdentifier} {\n${indentedTemplate}\n}`
+    : `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
 
-  return nextSource.replace(templateMatch, classBlock);
+  let transformedSource;
+  if (templateDeclaration) {
+    transformedSource = `${source.slice(0, templateDeclaration.start)}${classBlock}${source.slice(templateDeclaration.end)}`;
+  } else {
+    transformedSource = source.replace(templateMatch, classBlock);
+  }
+
+  if (!componentImportMatch) {
+    transformedSource = `import Component from '@glimmer/component';\n${transformedSource}`;
+  }
+
+  if (templateDeclaration) {
+    transformedSource = removeUnusedTemplateOnlyTypeImport(
+      transformedSource,
+      '@ember/component/template-only',
+      'TOC'
+    );
+    transformedSource = removeUnusedTemplateOnlyTypeImport(transformedSource, '@glint/template', 'ComponentLike');
+  }
+
+  return transformedSource;
 }
 
 function transformFile(filePath) {
