@@ -18,6 +18,64 @@ function indentBlock(text, spaces) {
     .join('\n');
 }
 
+function findTemplateOnlyDeclaration(source, templateMatchInfo) {
+  const templateMatch = templateMatchInfo[0];
+  const templateStart = templateMatchInfo.index;
+  const templateEnd = templateStart + templateMatch.length;
+
+  const constStart = source.lastIndexOf('const ', templateStart);
+  if (constStart === -1) {
+    return null;
+  }
+
+  const beforeTemplate = source.slice(constStart, templateStart);
+  if (beforeTemplate.includes(';') || !beforeTemplate.includes('=')) {
+    return null;
+  }
+
+  const nameMatch = /^const\s+([A-Za-z_$][\w$]*)\b/.exec(beforeTemplate);
+  if (!nameMatch) {
+    return null;
+  }
+
+  let declarationEnd = templateEnd;
+  while (/\s/.test(source[declarationEnd] || '')) {
+    declarationEnd += 1;
+  }
+
+  if (source.startsWith('satisfies', declarationEnd)) {
+    declarationEnd += 'satisfies'.length;
+
+    while (declarationEnd < source.length) {
+      if (source[declarationEnd] === ';') {
+        declarationEnd += 1;
+        break;
+      }
+
+      if (source[declarationEnd] === '\n') {
+        let lookahead = declarationEnd + 1;
+        while (source[lookahead] === ' ' || source[lookahead] === '\t') {
+          lookahead += 1;
+        }
+        if (/^(export|const|let|var|class|function)\b/.test(source.slice(lookahead))) {
+          break;
+        }
+      }
+
+      declarationEnd += 1;
+    }
+  } else if (source[declarationEnd] === ';') {
+    declarationEnd += 1;
+  }
+
+  return {
+    name: nameMatch[1],
+    start: constStart,
+    end: declarationEnd,
+    text: source.slice(constStart, declarationEnd),
+  };
+}
+
 function transformSource(source, filePath) {
   const templateRegex = /<template\b[^>]*>[\s\S]*?<\/template>/gm;
   const templateMatches = [...source.matchAll(templateRegex)];
@@ -28,14 +86,10 @@ function transformSource(source, filePath) {
   if (templateMatches.length > 1) {
     throw new Error('Expected exactly one <template> tag');
   }
-  const templateMatch = templateMatches[0][0];
-
-  const templateOnlyDeclarationRegex =
-    /const\s+([A-Za-z_$][\w$]*)\s*(?::[\s\S]*?)?=\s*(<template\b[^>]*>[\s\S]*?<\/template>)\s*(?:satisfies\s+[\s\S]*?(?=\s*;|\n\s*(?:export|const|let|var|class|function|$)))?\s*;?/gm;
-  const templateDeclarationMatch = [...source.matchAll(templateOnlyDeclarationRegex)].find(
-    (match) => match[2] === templateMatch
-  );
-  const templateDeclarationName = templateDeclarationMatch ? templateDeclarationMatch[1] : null;
+  const templateMatchInfo = templateMatches[0];
+  const templateMatch = templateMatchInfo[0];
+  const templateDeclaration = findTemplateOnlyDeclaration(source, templateMatchInfo);
+  const templateDeclarationName = templateDeclaration ? templateDeclaration.name : null;
 
   if (/\bexport\s+default\b/.test(source)) {
     const allowedDefaultExport = templateDeclarationName
@@ -50,20 +104,24 @@ function transformSource(source, filePath) {
   const componentImportMatch = source.match(componentImportRegex);
   const componentIdentifier = componentImportMatch ? componentImportMatch[1] : 'Component';
 
-  let nextSource = source;
-  if (!componentImportMatch) {
-    nextSource = `import Component from '@glimmer/component';\n${nextSource}`;
-  }
-
   const className = toClassName(filePath) || 'ComponentClass';
   const indentedTemplate = indentBlock(templateMatch, 2);
   const classBlock = templateDeclarationName
     ? `class ${templateDeclarationName} extends ${componentIdentifier} {\n${indentedTemplate}\n}`
     : `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
 
-  return templateDeclarationMatch
-    ? nextSource.replace(templateDeclarationMatch[0], classBlock)
-    : nextSource.replace(templateMatch, classBlock);
+  let transformedSource;
+  if (templateDeclaration) {
+    transformedSource = `${source.slice(0, templateDeclaration.start)}${classBlock}${source.slice(templateDeclaration.end)}`;
+  } else {
+    transformedSource = source.replace(templateMatch, classBlock);
+  }
+
+  if (!componentImportMatch) {
+    transformedSource = `import Component from '@glimmer/component';\n${transformedSource}`;
+  }
+
+  return transformedSource;
 }
 
 function transformFile(filePath) {
