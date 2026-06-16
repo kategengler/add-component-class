@@ -23,17 +23,27 @@ function findTemplateOnlyDeclaration(source, templateMatchInfo) {
   const templateStart = templateMatchInfo.index;
   const templateEnd = templateStart + templateMatch.length;
 
-  const constStart = source.lastIndexOf('const ', templateStart);
+  const constOnNewLineStart = source.lastIndexOf('\nconst ', templateStart);
+  let constStart = constOnNewLineStart === -1 ? -1 : constOnNewLineStart + 1;
+  if (constStart === -1 && source.startsWith('const ')) {
+    constStart = 0;
+  }
   if (constStart === -1) {
     return null;
   }
 
   const beforeTemplate = source.slice(constStart, templateStart);
-  if (beforeTemplate.includes(';') || !beforeTemplate.includes('=')) {
+  if (!beforeTemplate.includes('=')) {
     return null;
   }
 
-  const nameMatch = /^const\s+([A-Za-z_$][\w$]*)\b/.exec(beforeTemplate);
+  const equalsIndex = beforeTemplate.lastIndexOf('=');
+  if (!/^\s*$/.test(beforeTemplate.slice(equalsIndex + 1))) {
+    return null;
+  }
+
+  const headerBeforeTemplate = beforeTemplate.slice(0, equalsIndex + 1);
+  const nameMatch = /^const\s+([A-Za-z_$][\w$]*)\b/.exec(headerBeforeTemplate);
   if (!nameMatch) {
     return null;
   }
@@ -57,7 +67,7 @@ function findTemplateOnlyDeclaration(source, templateMatchInfo) {
         while (source[lookahead] === ' ' || source[lookahead] === '\t') {
           lookahead += 1;
         }
-        if (/^(export|const|let|var|class|function)\b/.test(source.slice(lookahead))) {
+        if (/^(export|const|let|var|class|function|type|interface|enum)\b/.test(source.slice(lookahead))) {
           break;
         }
       }
