@@ -10,6 +10,14 @@ function toClassName(filePath) {
     .join('');
 }
 
+function indentBlock(text, spaces) {
+  const prefix = ' '.repeat(spaces);
+  return text
+    .split('\n')
+    .map((line) => `${prefix}${line}`)
+    .join('\n');
+}
+
 function transformSource(source, filePath) {
   if (/\bexport\s+default\b/.test(source)) {
     throw new Error('File already has a default export');
@@ -32,7 +40,8 @@ function transformSource(source, filePath) {
   }
 
   const className = toClassName(filePath) || 'ComponentClass';
-  const classBlock = `export default class ${className} extends ${componentIdentifier} {\n${templateMatch[0]}\n}`;
+  const indentedTemplate = indentBlock(templateMatch[0], 2);
+  const classBlock = `export default class ${className} extends ${componentIdentifier} {\n${indentedTemplate}\n}`;
 
   return nextSource.replace(templateRegex, classBlock);
 }

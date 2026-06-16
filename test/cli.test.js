@@ -7,15 +7,19 @@ const { execFileSync } = require('node:child_process');
 
 const cliPath = path.resolve(__dirname, '../bin/add-component-class.js');
 
-function writeTempFile(name, contents) {
+function writeTempFile(t, name, contents) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'add-component-class-'));
+  t.after(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   const filePath = path.join(dir, name);
   fs.writeFileSync(filePath, contents, 'utf8');
   return filePath;
 }
 
-test('wraps template in a component class and adds import', () => {
+test('wraps template in a component class and adds import', (t) => {
   const filePath = writeTempFile(
+    t,
     'layer-list.gjs',
     `<template>
   <ul>
@@ -33,8 +37,9 @@ test('wraps template in a component class and adds import', () => {
   assert.match(output, /<template>[\s\S]*<\/template>/);
 });
 
-test('errors when a default export already exists', () => {
+test('errors when a default export already exists', (t) => {
   const filePath = writeTempFile(
+    t,
     'has-default.gjs',
     `export default class Existing {}
 <template>
@@ -49,8 +54,8 @@ test('errors when a default export already exists', () => {
   );
 });
 
-test('errors when no template tag exists', () => {
-  const filePath = writeTempFile('no-template.gts', `const value = 1;\n`);
+test('errors when no template tag exists', (t) => {
+  const filePath = writeTempFile(t, 'no-template.gts', `const value = 1;\n`);
 
   assert.throws(
     () => execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' }),
