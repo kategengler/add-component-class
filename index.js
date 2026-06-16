@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const declarationBoundaryKeywords = 'export|const|let|var|class|function|type|interface|enum';
 
 function toClassName(filePath) {
   const baseName = path.basename(filePath, path.extname(filePath));
@@ -64,10 +65,10 @@ function findTemplateOnlyDeclaration(source, templateMatchInfo) {
 
       if (source[declarationEnd] === '\n') {
         let lookahead = declarationEnd + 1;
-        while (source[lookahead] === ' ' || source[lookahead] === '\t') {
+        while (lookahead < source.length && (source[lookahead] === ' ' || source[lookahead] === '\t')) {
           lookahead += 1;
         }
-        if (/^(export|const|let|var|class|function|type|interface|enum)\b/.test(source.slice(lookahead))) {
+        if (new RegExp(`^(${declarationBoundaryKeywords})\\b`).test(source.slice(lookahead))) {
           break;
         }
       }
