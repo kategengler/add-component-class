@@ -122,3 +122,59 @@ test('errors when multiple template tags exist', (t) => {
     /Expected exactly one <template> tag/
   );
 });
+
+test('transforms gts template-only component typed as TOC with default export', (t) => {
+  const input = `import type { TOC } from '@ember/component/template-only';
+
+const X: TOC<{ Args: { value: string } }> = <template>
+  <div>{{@value}}</div>
+</template>;
+
+export default X;
+`;
+  const filePath = writeTempFile(t, 'typed-default.gts', input);
+
+  execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' });
+
+  const output = fs.readFileSync(filePath, 'utf8');
+  const expected = `import Component from '@glimmer/component';
+import type { TOC } from '@ember/component/template-only';
+
+class X extends Component {
+  <template>
+    <div>{{@value}}</div>
+  </template>
+}
+
+export default X;
+`;
+  assert.strictEqual(output, expected);
+});
+
+test('transforms gts template-only component with satisfies and named export', (t) => {
+  const input = `import type { ComponentLike } from '@glint/template';
+
+const X = <template>
+  <div>{{@value}}</div>
+</template> satisfies ComponentLike<{ Args: { value: string } }>;
+
+export { X };
+`;
+  const filePath = writeTempFile(t, 'satisfies-named.gts', input);
+
+  execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' });
+
+  const output = fs.readFileSync(filePath, 'utf8');
+  const expected = `import Component from '@glimmer/component';
+import type { ComponentLike } from '@glint/template';
+
+class X extends Component {
+  <template>
+    <div>{{@value}}</div>
+  </template>
+}
+
+export { X };
+`;
+  assert.strictEqual(output, expected);
+});
