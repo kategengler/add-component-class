@@ -18,23 +18,70 @@ function writeTempFile(t, name, contents) {
 }
 
 test('wraps template in a component class and adds import', (t) => {
-  const filePath = writeTempFile(
-    t,
-    'layer-list.gjs',
-    `<template>
+  const input = `<template>
   <ul>
     <li>hi</li>
   </ul>
 </template>
-`
-  );
+`;
+  const filePath = writeTempFile(t, 'layer-list.gjs', input);
 
   execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' });
 
   const output = fs.readFileSync(filePath, 'utf8');
-  assert.match(output, /import Component from '@glimmer\/component';/);
-  assert.match(output, /export default class LayerList extends Component {/);
-  assert.match(output, /<template>[\s\S]*<\/template>/);
+  const expected = `import Component from '@glimmer/component';
+export default class LayerList extends Component {
+  <template>
+    <ul>
+      <li>hi</li>
+    </ul>
+  </template>
+}
+`;
+  assert.strictEqual(output, expected);
+});
+
+test('transforms complex file and preserves surrounding code exactly', (t) => {
+  const input = `import { tracked } from '@glimmer/tracking';
+import GlimmerComponent from '@glimmer/component';
+
+const greeting = 'hi';
+function helper(name) {
+  return name.toUpperCase();
+}
+
+<template>
+  <section data-state={{if this.isOpen "open" "closed"}}>
+    {{helper greeting}}
+  </section>
+</template>
+
+const trailingValue = 42;
+`;
+  const filePath = writeTempFile(t, 'fancy-card.gts', input);
+
+  execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' });
+
+  const output = fs.readFileSync(filePath, 'utf8');
+  const expected = `import { tracked } from '@glimmer/tracking';
+import GlimmerComponent from '@glimmer/component';
+
+const greeting = 'hi';
+function helper(name) {
+  return name.toUpperCase();
+}
+
+export default class FancyCard extends GlimmerComponent {
+  <template>
+    <section data-state={{if this.isOpen "open" "closed"}}>
+      {{helper greeting}}
+    </section>
+  </template>
+}
+
+const trailingValue = 42;
+`;
+  assert.strictEqual(output, expected);
 });
 
 test('errors when a default export already exists', (t) => {
