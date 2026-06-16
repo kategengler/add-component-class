@@ -19,6 +19,31 @@ function indentBlock(text, spaces) {
     .join('\n');
 }
 
+function removeUnusedTemplateOnlyTypeImport(source, moduleName, importedType) {
+  const importRegex = new RegExp(
+    `import\\s+type\\s*{\\s*([^}]*)\\s*}\\s*from\\s*['"]${moduleName.replace('/', '\\/')}['"];?\\n?`,
+    'g'
+  );
+  const sourceWithoutModuleImports = source.replace(importRegex, '');
+  if (new RegExp(`\\b${importedType}\\b`).test(sourceWithoutModuleImports)) {
+    return source;
+  }
+
+  return source.replace(importRegex, (fullMatch, specifiers) => {
+    const remaining = specifiers
+      .split(',')
+      .map((specifier) => specifier.trim())
+      .filter((specifier) => specifier && !new RegExp(`^${importedType}(\\s+as\\s+\\w+)?$`).test(specifier));
+
+    if (remaining.length === 0) {
+      return '';
+    }
+
+    const hasTrailingNewline = fullMatch.endsWith('\n');
+    return `import type { ${remaining.join(', ')} } from '${moduleName}';${hasTrailingNewline ? '\n' : ''}`;
+  });
+}
+
 function findTemplateOnlyDeclaration(source, templateMatchInfo) {
   const templateMatch = templateMatchInfo[0];
   const templateStart = templateMatchInfo.index;
@@ -130,6 +155,15 @@ function transformSource(source, filePath) {
 
   if (!componentImportMatch) {
     transformedSource = `import Component from '@glimmer/component';\n${transformedSource}`;
+  }
+
+  if (templateDeclaration) {
+    transformedSource = removeUnusedTemplateOnlyTypeImport(
+      transformedSource,
+      '@ember/component/template-only',
+      'TOC'
+    );
+    transformedSource = removeUnusedTemplateOnlyTypeImport(transformedSource, '@glint/template', 'ComponentLike');
   }
 
   return transformedSource;

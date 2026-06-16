@@ -138,7 +138,6 @@ export default X;
 
   const output = fs.readFileSync(filePath, 'utf8');
   const expected = `import Component from '@glimmer/component';
-import type { TOC } from '@ember/component/template-only';
 
 class X extends Component {
   <template>
@@ -166,7 +165,6 @@ export { X };
 
   const output = fs.readFileSync(filePath, 'utf8');
   const expected = `import Component from '@glimmer/component';
-import type { ComponentLike } from '@glint/template';
 
 class X extends Component {
   <template>
