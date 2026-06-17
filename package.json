@@ -1,6 +1,6 @@
 {
   "name": "add-component-class",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Upgrades a template-only gjs/gts to have a component class",
   "keywords": [],
   "homepage": "https://github.com/kategengler/add-component-class#readme",
