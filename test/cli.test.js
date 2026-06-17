@@ -101,6 +101,30 @@ test('errors when a default export already exists', (t) => {
   );
 });
 
+test('ignores export default text inside strings', (t) => {
+  const input = `const message = 'export default should not count';
+
+<template>
+  hi
+</template>
+`;
+  const filePath = writeTempFile(t, 'string-default.gjs', input);
+
+  execFileSync(process.execPath, [cliPath, filePath], { stdio: 'pipe' });
+
+  const output = fs.readFileSync(filePath, 'utf8');
+  const expected = `import Component from '@glimmer/component';
+const message = 'export default should not count';
+
+export default class StringDefault extends Component {
+  <template>
+    hi
+  </template>
+}
+`;
+  assert.strictEqual(output, expected);
+});
+
 test('errors when no template tag exists', (t) => {
   const filePath = writeTempFile(t, 'no-template.gts', `const value = 1;\n`);
 
