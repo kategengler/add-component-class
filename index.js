@@ -92,7 +92,7 @@ function findComponentImport(body) {
   return { present: false, identifier: 'Component' };
 }
 
-// Check if an identifier with the given name appears anywhere in body,
+// Recursively check if an identifier with the given name appears anywhere in body,
 // excluding the provided nodes.
 function isIdentifierUsedInBody(body, excludeNodes, localName) {
   const excluded = new Set(excludeNodes);
@@ -105,7 +105,9 @@ function isIdentifierUsedInBody(body, excludeNodes, localName) {
       if (typeof value !== 'object' || value === null) continue;
       if (Array.isArray(value)) {
         for (const item of value) {
-          if (item && typeof item === 'object' && item.type && walkNode(item)) return true;
+          if (item && typeof item === 'object' && item.type && walkNode(item)) {
+            return true;
+          }
         }
       } else if (value.type && walkNode(value)) {
         return true;
