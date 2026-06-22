@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "content-tag": "4.2.0",
+    "ember-estree": "^0.6.4",
     "typescript": "6.0.3"
   }
 }
