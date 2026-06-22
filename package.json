@@ -13,6 +13,7 @@
   },
   "license": "ISC",
   "author": "",
+  "type": "module",
   "main": "index.js",
   "bin": {
     "add-component-class": "./bin/add-component-class.js"
@@ -24,8 +25,6 @@
     "release-plan": "^0.18.0"
   },
   "dependencies": {
-    "content-tag": "4.2.0",
-    "ember-estree": "^0.6.4",
-    "typescript": "6.0.3"
+    "ember-estree": "^0.6.4"
   }
 }
