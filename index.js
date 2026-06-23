@@ -1,10 +1,6 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const ts = require('typescript');
-const { Preprocessor } = require('content-tag');
-
-const templatePreprocessor = new Preprocessor();
-const templatePlaceholder = '__GLIMMER_TEMPLATE__';
+import fs from 'node:fs';
+import path from 'node:path';
+import { toTree } from 'ember-estree';
 
 function toClassName(filePath) {
   const baseName = path.basename(filePath, path.extname(filePath));
@@ -23,169 +19,114 @@ function indentBlock(text, spaces) {
     .join('\n');
 }
 
-function getScriptKind(filePath) {
-  return filePath.endsWith('.gts') ? ts.ScriptKind.TS : ts.ScriptKind.JS;
-}
-
-function hasModifier(node, kind) {
-  return node.modifiers?.some((modifier) => modifier.kind === kind) ?? false;
-}
-
-function getModuleSpecifier(node) {
-  return ts.isStringLiteral(node.moduleSpecifier) ? node.moduleSpecifier.text : null;
-}
-
-function createSourceFile(source, filePath) {
-  return ts.createSourceFile(filePath, source, ts.ScriptTarget.Latest, true, getScriptKind(filePath));
-}
-
-function replaceTemplateWithPlaceholder(source, templateInfo) {
-  return `${source.slice(0, templateInfo.range.startUtf16Codepoint)}${templatePlaceholder}${source.slice(templateInfo.range.endUtf16Codepoint)}`;
-}
-
-function unwrapTemplateExpression(expression) {
+// Recursively unwrap TypeScript expression wrappers to find a GlimmerTemplate node.
+function unwrapGlimmerTemplate(node) {
+  if (!node) return null;
+  if (node.type === 'GlimmerTemplate') return node;
   if (
-    ts.isParenthesizedExpression(expression) ||
-    ts.isAsExpression(expression) ||
-    ts.isSatisfiesExpression(expression) ||
-    ts.isNonNullExpression(expression) ||
-    ts.isTypeAssertionExpression(expression)
+    node.type === 'TSAsExpression' ||
+    node.type === 'TSSatisfiesExpression' ||
+    node.type === 'TSNonNullExpression' ||
+    node.type === 'TSTypeAssertion' ||
+    node.type === 'ParenthesizedExpression'
   ) {
-    return unwrapTemplateExpression(expression.expression);
+    return unwrapGlimmerTemplate(node.expression);
   }
-
-  return expression;
-}
-
-function isTemplatePlaceholderExpression(expression) {
-  const unwrapped = unwrapTemplateExpression(expression);
-  return ts.isIdentifier(unwrapped) && unwrapped.text === templatePlaceholder;
-}
-
-function findTemplateDeclaration(sourceFile) {
-  for (const statement of sourceFile.statements) {
-    if (!ts.isVariableStatement(statement) || !(statement.declarationList.flags & ts.NodeFlags.Const)) {
-      continue;
-    }
-
-    for (const declaration of statement.declarationList.declarations) {
-      if (!declaration.initializer || !isTemplatePlaceholderExpression(declaration.initializer)) {
-        continue;
-      }
-
-      if (!ts.isIdentifier(declaration.name)) {
-        continue;
-      }
-
-      return {
-        name: declaration.name.text,
-        start: statement.getStart(sourceFile),
-        end: statement.end,
-      };
-    }
-  }
-
   return null;
 }
 
-function hasAllowedDefaultExport(statement, templateDeclarationName) {
-  return (
-    ts.isExportAssignment(statement) &&
-    !statement.isExportEquals &&
-    templateDeclarationName &&
-    ts.isIdentifier(statement.expression) &&
-    statement.expression.text === templateDeclarationName
-  );
-}
-
-function hasDefaultExport(sourceFile, templateDeclarationName) {
-  for (const statement of sourceFile.statements) {
-    if (hasAllowedDefaultExport(statement, templateDeclarationName)) {
-      continue;
-    }
-
-    if (ts.isExportAssignment(statement) && !statement.isExportEquals) {
-      return true;
-    }
-
-    if (hasModifier(statement, ts.SyntaxKind.ExportKeyword) && hasModifier(statement, ts.SyntaxKind.DefaultKeyword)) {
-      return true;
-    }
-
-    if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-      if (statement.exportClause.elements.some((specifier) => specifier.name.text === 'default')) {
-        return true;
+// Find GlimmerTemplate entries in the top-level body.
+// Returns an array of { templateNode, declarationNode, name } objects.
+function findTemplatesInBody(body) {
+  const results = [];
+  for (const node of body) {
+    if (node.type === 'GlimmerTemplate') {
+      results.push({ templateNode: node, declarationNode: null, name: null });
+    } else if (node.type === 'VariableDeclaration' && node.kind === 'const') {
+      for (const decl of node.declarations) {
+        if (decl.id.type !== 'Identifier') continue;
+        const tmpl = unwrapGlimmerTemplate(decl.init);
+        if (tmpl) {
+          results.push({ templateNode: tmpl, declarationNode: node, name: decl.id.name });
+        }
       }
     }
   }
-
-  return false;
+  return results;
 }
 
-function findComponentImport(sourceFile) {
-  for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement) || getModuleSpecifier(statement) !== '@glimmer/component') {
-      continue;
-    }
-
-    const identifier = statement.importClause?.name?.text;
-    return {
-      present: true,
-      identifier: identifier || 'Component',
-    };
-  }
-
-  return {
-    present: false,
-    identifier: 'Component',
-  };
-}
-
-function isIgnoredImportIdentifier(node, importDeclaration) {
-  let current = node;
-  while (current && current !== importDeclaration) {
-    if (
-      ts.isImportClause(current) ||
-      ts.isImportSpecifier(current) ||
-      ts.isNamedImports(current) ||
-      ts.isNamespaceImport(current)
-    ) {
+function hasDefaultExport(body, templateDeclarationName) {
+  for (const node of body) {
+    if (node.type === 'ExportDefaultDeclaration') {
+      if (
+        templateDeclarationName &&
+        node.declaration.type === 'Identifier' &&
+        node.declaration.name === templateDeclarationName
+      ) {
+        continue;
+      }
       return true;
     }
-    current = current.parent;
+    if (node.type === 'ExportNamedDeclaration' && node.specifiers) {
+      for (const spec of node.specifiers) {
+        if (spec.exported.name === 'default') {
+          return true;
+        }
+      }
+    }
   }
-
   return false;
 }
 
-function isIdentifierUsed(sourceFile, importDeclaration, localName) {
-  let used = false;
-
-  function visit(node) {
-    if (used) {
-      return;
+function findComponentImport(body) {
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration') continue;
+    if (node.source.value !== '@glimmer/component') continue;
+    for (const spec of node.specifiers) {
+      if (spec.type === 'ImportDefaultSpecifier') {
+        return { present: true, identifier: spec.local.name };
+      }
     }
+    return { present: true, identifier: 'Component' };
+  }
+  return { present: false, identifier: 'Component' };
+}
 
-    if (ts.isIdentifier(node) && node.text === localName && !isIgnoredImportIdentifier(node, importDeclaration)) {
-      used = true;
-      return;
+// Recursively check if an identifier with the given name appears anywhere in body,
+// excluding the provided nodes.
+function isIdentifierUsedInBody(body, excludeNodes, localName) {
+  const excluded = new Set(excludeNodes);
+
+  function walkNode(node) {
+    if (!node || typeof node !== 'object') return false;
+    if (excluded.has(node)) return false;
+    if (node.type === 'Identifier' && node.name === localName) return true;
+    for (const value of Object.values(node)) {
+      if (typeof value !== 'object' || value === null) continue;
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          if (item && typeof item === 'object' && item.type && walkNode(item)) {
+            return true;
+          }
+        }
+      } else if (value.type && walkNode(value)) {
+        return true;
+      }
     }
-
-    ts.forEachChild(node, visit);
+    return false;
   }
 
-  visit(sourceFile);
-  return used;
+  for (const node of body) {
+    if (excluded.has(node)) continue;
+    if (walkNode(node)) return true;
+  }
+  return false;
 }
 
 function formatImportSpecifier(specifier) {
-  const importedName = specifier.propertyName?.text || specifier.name.text;
-  const localName = specifier.name.text;
-
-  if (importedName === localName) {
-    return localName;
-  }
-
+  const importedName = specifier.imported.name;
+  const localName = specifier.local.name;
+  if (importedName === localName) return localName;
   return `${importedName} as ${localName}`;
 }
 
@@ -201,120 +142,101 @@ function removeRangeWithTrailingNewline(source, start, end) {
   return `${source.slice(0, start)}${source.slice(end)}`;
 }
 
-function removeUnusedTemplateOnlyTypeImport(source, filePath, moduleName, importedType, templateBlock) {
-  let sourceForAst = source;
-  const templateStart = templateBlock ? source.indexOf(templateBlock) : -1;
+function removeUnusedTypeImport(source, filePath, moduleName, importedType) {
+  const ast = toTree(source, { filePath });
+  const body = ast.program.body;
 
-  if (templateStart !== -1) {
-    sourceForAst = `${source.slice(0, templateStart)}${templatePlaceholder}${source.slice(templateStart + templateBlock.length)}`;
-  }
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration') continue;
+    if (node.source.value !== moduleName) continue;
 
-  const sourceFile = createSourceFile(sourceForAst, filePath);
-
-  for (const statement of sourceFile.statements) {
-    if (!ts.isImportDeclaration(statement) || getModuleSpecifier(statement) !== moduleName) {
-      continue;
-    }
-
-    const namedBindings = statement.importClause?.namedBindings;
-    if (!namedBindings || !ts.isNamedImports(namedBindings)) {
-      continue;
-    }
+    const namedSpecifiers = node.specifiers.filter((s) => s.type === 'ImportSpecifier');
+    if (namedSpecifiers.length === 0) continue;
 
     const remainingSpecifiers = [];
     let removedSpecifier = false;
 
-    for (const specifier of namedBindings.elements) {
-      const importedName = specifier.propertyName?.text || specifier.name.text;
-      const localName = specifier.name.text;
+    for (const spec of namedSpecifiers) {
+      const importedName = spec.imported.name;
+      const localName = spec.local.name;
 
-      if (importedName === importedType && !isIdentifierUsed(sourceFile, statement, localName)) {
+      if (importedName === importedType && !isIdentifierUsedInBody(body, [node], localName)) {
         removedSpecifier = true;
         continue;
       }
 
-      remainingSpecifiers.push(specifier);
+      remainingSpecifiers.push(spec);
     }
 
-    if (!removedSpecifier) {
-      return source;
-    }
+    if (!removedSpecifier) return source;
 
     if (remainingSpecifiers.length === 0) {
-      return removeRangeWithTrailingNewline(source, statement.getStart(sourceFile), statement.end);
+      return removeRangeWithTrailingNewline(source, node.start, node.end);
     }
 
     const updatedImport = `import type { ${remainingSpecifiers.map(formatImportSpecifier).join(', ')} } from '${moduleName}';`;
-    return `${source.slice(0, statement.getStart(sourceFile))}${updatedImport}${source.slice(statement.end)}`;
+    return `${source.slice(0, node.start)}${updatedImport}${source.slice(node.end)}`;
   }
 
   return source;
 }
 
 function transformSource(source, filePath) {
-  const templateMatches = templatePreprocessor.parse(source, { filename: filePath });
+  let templateCount = 0;
+  const ast = toTree(source, {
+    filePath,
+    visitors: {
+      GlimmerTemplate: () => templateCount++,
+    },
+  });
+  const body = ast.program.body;
 
-  if (templateMatches.length === 0) {
+  if (templateCount === 0) {
     throw new Error('No <template> tag found');
   }
-  if (templateMatches.length > 1) {
+  if (templateCount > 1) {
     throw new Error('Expected exactly one <template> tag');
   }
 
-  const templateMatchInfo = templateMatches[0];
-  const templateMatch = source.slice(
-    templateMatchInfo.range.startUtf16Codepoint,
-    templateMatchInfo.range.endUtf16Codepoint
-  );
-  const placeholderSource = replaceTemplateWithPlaceholder(source, templateMatchInfo);
-  const sourceFile = createSourceFile(placeholderSource, filePath);
-  const templateDeclaration = findTemplateDeclaration(sourceFile);
-  const normalizedTemplateDeclaration = templateDeclaration
-    ? {
-        ...templateDeclaration,
-        end:
-          templateDeclaration.end +
-          (templateMatch.length - templatePlaceholder.length),
-      }
-    : null;
-  const templateDeclarationName = normalizedTemplateDeclaration ? normalizedTemplateDeclaration.name : null;
+  const templates = findTemplatesInBody(body);
 
-  if (hasDefaultExport(sourceFile, templateDeclarationName)) {
+  const { templateNode, declarationNode, name: declarationName } = templates[0];
+
+  if (hasDefaultExport(body, declarationName)) {
     throw new Error('File already has a default export');
   }
 
-  const componentImport = findComponentImport(sourceFile);
+  const componentImport = findComponentImport(body);
   const className = toClassName(filePath) || 'ComponentClass';
-  const indentedTemplate = indentBlock(templateMatch, 2);
-  const classBlock = templateDeclarationName
-    ? `class ${templateDeclarationName} extends ${componentImport.identifier} {\n${indentedTemplate}\n}`
+  const templateText = source.slice(templateNode.start, templateNode.end);
+  const indentedTemplate = indentBlock(templateText, 2);
+  const classBlock = declarationName
+    ? `class ${declarationName} extends ${componentImport.identifier} {\n${indentedTemplate}\n}`
     : `export default class ${className} extends ${componentImport.identifier} {\n${indentedTemplate}\n}`;
 
   let transformedSource;
-  if (normalizedTemplateDeclaration) {
-    transformedSource = `${source.slice(0, normalizedTemplateDeclaration.start)}${classBlock}${source.slice(normalizedTemplateDeclaration.end)}`;
+  if (declarationNode) {
+    transformedSource = `${source.slice(0, declarationNode.start)}${classBlock}${source.slice(declarationNode.end)}`;
   } else {
-    transformedSource = `${source.slice(0, templateMatchInfo.range.startUtf16Codepoint)}${classBlock}${source.slice(templateMatchInfo.range.endUtf16Codepoint)}`;
+    transformedSource = `${source.slice(0, templateNode.start)}${classBlock}${source.slice(templateNode.end)}`;
   }
 
   if (!componentImport.present) {
     transformedSource = `import Component from '@glimmer/component';\n${transformedSource}`;
   }
 
-  if (templateDeclaration) {
-    transformedSource = removeUnusedTemplateOnlyTypeImport(
+  if (declarationNode) {
+    transformedSource = removeUnusedTypeImport(
       transformedSource,
       filePath,
       '@ember/component/template-only',
-      'TOC',
-      templateMatch
+      'TOC'
     );
-    transformedSource = removeUnusedTemplateOnlyTypeImport(
+    transformedSource = removeUnusedTypeImport(
       transformedSource,
       filePath,
       '@glint/template',
-      'ComponentLike',
-      templateMatch
+      'ComponentLike'
     );
   }
 
@@ -331,7 +253,4 @@ function transformFile(filePath) {
   fs.writeFileSync(filePath, transformed, 'utf8');
 }
 
-module.exports = {
-  transformFile,
-  transformSource,
-};
+export { transformFile, transformSource };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { transformFile } = require('../index.js');
+import { transformFile } from '../index.js';
 
 function main() {
   const filePath = process.argv[2];
