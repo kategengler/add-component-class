@@ -1,5 +1,16 @@
 # Changelog
 
+## Release (2026-06-23)
+
+* add-component-class 1.0.1 (patch)
+
+#### :house: Internal
+* `add-component-class`
+  * [#6](https://github.com/kategengler/add-component-class/pull/6) refactor: replace typescript + content-tag with ember-estree ([@Copilot](https://github.com/apps/copilot-swe-agent))
+
+#### Committers: 1
+- Copilot [Bot] ([@copilot-swe-agent](https://github.com/apps/copilot-swe-agent))
+
 ## Release (2026-06-17)
 
 * add-component-class 1.0.0 (major)

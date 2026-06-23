@@ -1,19 +1,11 @@
 {
   "solution": {
     "add-component-class": {
-      "impact": "major",
-      "oldVersion": "0.0.1",
-      "newVersion": "1.0.0",
+      "impact": "patch",
+      "oldVersion": "1.0.0",
+      "newVersion": "1.0.1",
       "tagName": "latest",
       "constraints": [
-        {
-          "impact": "major",
-          "reason": "Appears in changelog section :boom: Breaking Change"
-        },
-        {
-          "impact": "minor",
-          "reason": "Appears in changelog section :rocket: Enhancement"
-        },
         {
           "impact": "patch",
           "reason": "Appears in changelog section :house: Internal"
@@ -22,5 +14,5 @@
       "pkgJSONPath": "./package.json"
     }
   },
-  "description": "## Release (2026-06-17)\n\n* add-component-class 1.0.0 (major)\n\n#### :boom: Breaking Change\n* `add-component-class`\n  * [#1](https://github.com/kategengler/add-component-class/pull/1) Add `npx` CLI to convert template-only `.gjs`/`.gts` files into class-based Glimmer components ([@Copilot](https://github.com/apps/copilot-swe-agent))\n\n#### :rocket: Enhancement\n* `add-component-class`\n  * [#2](https://github.com/kategengler/add-component-class/pull/2) Support all documented GTS template-only declaration forms ([@Copilot](https://github.com/apps/copilot-swe-agent))\n  * [#1](https://github.com/kategengler/add-component-class/pull/1) Add `npx` CLI to convert template-only `.gjs`/`.gts` files into class-based Glimmer components ([@Copilot](https://github.com/apps/copilot-swe-agent))\n\n#### :house: Internal\n* `add-component-class`\n  * [#5](https://github.com/kategengler/add-component-class/pull/5) Refactor to use content-tag rather than slice  ([@Copilot](https://github.com/apps/copilot-swe-agent))\n  * [#3](https://github.com/kategengler/add-component-class/pull/3) Add release plan ([@kategengler](https://github.com/kategengler))\n\n#### Committers: 2\n- Copilot [Bot] ([@copilot-swe-agent](https://github.com/apps/copilot-swe-agent))\n- Katie Gengler ([@kategengler](https://github.com/kategengler))\n"
+  "description": "## Release (2026-06-23)\n\n* add-component-class 1.0.1 (patch)\n\n#### :house: Internal\n* `add-component-class`\n  * [#6](https://github.com/kategengler/add-component-class/pull/6) refactor: replace typescript + content-tag with ember-estree ([@Copilot](https://github.com/apps/copilot-swe-agent))\n\n#### Committers: 1\n- Copilot [Bot] ([@copilot-swe-agent](https://github.com/apps/copilot-swe-agent))\n"
 }
